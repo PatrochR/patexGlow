@@ -277,7 +277,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					var rows []table.Row
 					for i, s := range searchingLine {
 						rows = append(rows, table.Row{})
-						rows[i] = append(rows[i], "\t"+strconv.Itoa(s+1))
+						rows[i] = append(rows[i], strconv.Itoa(s+1))
 					}
 					m.searchTable.SetRows(rows)
 				}
@@ -291,7 +291,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				linesCount := len(strings.Split(m.textarea.Value(), "\n"))
 				go_up(&m, linesCount)
 				v, _ := strconv.Atoi(m.searchTable.SelectedRow()[0])
-				go_down(&m, v)
+				go_down(&m, v-1)
+				msg.Type = tea.KeyCtrlA
 			}
 
 		case tea.KeyCtrlF:
