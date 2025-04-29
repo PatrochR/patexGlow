@@ -19,13 +19,15 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-var linesCount int
+// var linesCount int
+var showSearchTable bool = false
 
 type sessionState uint
 
 const (
 	codeView sessionState = iota
 	tableView
+	searchTableView
 	inputView
 )
 
@@ -89,11 +91,12 @@ var (
 type errMsg error
 
 type model struct {
-	state     sessionState
-	textarea  textarea.Model
-	table     table.Model
-	textInput textinput.Model
-	err       error
+	state       sessionState
+	textarea    textarea.Model
+	table       table.Model
+	searchTable table.Model
+	textInput   textinput.Model
+	err         error
 }
 
 var source_file string
@@ -187,6 +190,15 @@ func initialModel() model {
 	input.Placeholder = "Search"
 	input.CharLimit = 156
 
+	searchColums := []table.Column{
+		{Title: "Line", Width: 15},
+	}
+
+	st := table.New(
+		table.WithColumns(searchColums),
+		table.WithFocused(false),
+	)
+
 	row := get_all_dir()
 	colums := []table.Column{
 		{Title: "Type", Width: 15},
@@ -209,6 +221,7 @@ func initialModel() model {
 		Background(lipgloss.Color("57")).
 		Bold(false)
 	t.SetStyles(s)
+	st.SetStyles(s)
 	ti := textarea.New()
 	ti.Focus()
 	ti.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
@@ -223,10 +236,11 @@ func initialModel() model {
 	}
 
 	return model{
-		textarea:  ti,
-		err:       nil,
-		table:     t,
-		textInput: input,
+		textarea:    ti,
+		err:         nil,
+		table:       t,
+		searchTable: st,
+		textInput:   input,
 	}
 }
 
@@ -248,33 +262,58 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			saveFile(m.textarea.Value())
 		case tea.KeyEnter:
 			if m.state == tableView {
-				if m.table.Columns()[0].Title == "Line" {
-					colums := []table.Column{
-						{Title: "Type", Width: 15},
-						{Title: "Name", Width: 15},
-					}
-					m.table.SetColumns(colums)
-					m.table.SetRows(get_all_dir())
-
-				} else if m.table.SelectedRow()[1] != "Dir" && m.table.Columns()[0].Title != "Line" {
+				if m.table.SelectedRow()[1] != "Dir" {
 					m.textarea.Reset()
 					read_file(&m.textarea, m.table.SelectedRow()[0])
 					source_file = m.table.SelectedRow()[0]
 				}
 			} else if m.state == inputView {
 				searchingLine = search(m.textarea.Value(), m.textInput.Value())
+				m.state = searchTableView
+				m.textInput.Blur()
+				m.searchTable.Focus()
+				showSearchTable = true
+				if len(searchingLine) != 0 {
+					var rows []table.Row
+					for i, s := range searchingLine {
+						rows = append(rows, table.Row{})
+						rows[i] = append(rows[i], "\t"+strconv.Itoa(s+1))
+					}
+					m.searchTable.SetRows(rows)
+				}
+			} else if m.state == searchTableView {
+				showSearchTable = false
+				m.state = codeView
+				m.searchTable.Blur()
+				m.textarea.Focus()
+				m.table.Blur()
+				m.textInput.Blur()
+				linesCount := len(strings.Split(m.textarea.Value(), "\n"))
+				go_up(&m, linesCount)
+				v, _ := strconv.Atoi(m.searchTable.SelectedRow()[0])
+				go_down(&m, v)
 			}
 
 		case tea.KeyCtrlF:
 			m.state = inputView
+			m.searchTable.Blur()
 			m.textarea.Blur()
 			m.table.Blur()
 			m.textInput.Focus()
 
 		case tea.KeyTab:
 			{
-
-				if m.state == codeView {
+				if showSearchTable {
+					if m.state == codeView {
+						m.state = searchTableView
+						m.textarea.Blur()
+						m.searchTable.Focus()
+					} else {
+						m.state = codeView
+						m.searchTable.Blur()
+						m.textarea.Focus()
+					}
+				} else if m.state == codeView {
 					m.state = tableView
 					m.textarea.Blur()
 					m.table.Focus()
@@ -289,6 +328,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			check_file_saved(m.textarea.Value())
 		}
 		switch m.state {
+		case searchTableView:
+			m.searchTable, cmd = m.searchTable.Update(msg)
+			cmds = append(cmds, cmd)
 		case codeView:
 			m.textarea, cmd = m.textarea.Update(msg)
 			cmds = append(cmds, cmd)
@@ -304,6 +346,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea.SetHeight(msg.Height - 8)
 		m.table.SetWidth((msg.Width / 4) - 5)
 		m.table.SetHeight(msg.Height - 5)
+		m.searchTable.SetWidth((msg.Width / 4) - 5)
+		m.searchTable.SetHeight(msg.Height - 5)
 		m.textInput.Width = (msg.Width - 20)
 
 	case errMsg:
@@ -316,27 +360,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	} else {
 		save_message = ""
 	}
-	if len(searchingLine) != 0 {
-		colums := []table.Column{
-			{Title: "Line", Width: 15},
-			{Title: " ", Width: 15},
-		}
-		m.table.SetColumns(colums)
-		var rows []table.Row
-		for i, s := range searchingLine {
-			rows = append(rows, table.Row{})
-			rows[i] = append(rows[i], "\t"+strconv.Itoa(s+1))
-		}
-		m.table.SetRows(rows)
-	} else {
-		colums := []table.Column{
-			{Title: "Type", Width: 15},
-			{Title: "Name", Width: 15},
-		}
-		m.table.SetColumns(colums)
-		m.table.SetRows(get_all_dir())
-	}
-	linesCount = len(strings.Split(m.textarea.Value(), "\n"))
+
 	return m, tea.Batch(cmds...)
 }
 
@@ -348,7 +372,6 @@ func check_file_saved(value string) {
 	}
 }
 
-// FIXME: show massage after save
 func saveFile(value string) {
 	if value == "" {
 		return
@@ -432,15 +455,28 @@ func (m model) View() string {
 	//row := strconv.Itoa(m.textarea.LineInfo().ColumnOffset)
 
 	format := strings.ToUpper(strings.Split(source_file, ".")[1])
-	if m.state == codeView {
-		s += lipgloss.JoinHorizontal(lipgloss.Top, modelStyle.Render(fmt.Sprintf("%s\n\n%s", m.textarea.View(), "\n"+generate_status_bar(m.textarea.Width(), save_message, format, source_file, hint))), tableStyle.Render(m.table.View()))
-		s = lipgloss.JoinVertical(lipgloss.Center, inputFoucseStyle.Render(m.textInput.View()), s)
-	} else if m.state == tableView {
-		s += lipgloss.JoinHorizontal(lipgloss.Top, modelFoucseStyle.Render(fmt.Sprintf("%s\n\n%s", m.textarea.View(), "\n"+generate_status_bar(m.textarea.Width(), save_message, format, source_file, hint))), tableFoucseStyle.Render(m.table.View()))
-		s = lipgloss.JoinVertical(lipgloss.Center, inputFoucseStyle.Render(m.textInput.View()), s)
+	if showSearchTable {
+		if m.state == codeView {
+			s += lipgloss.JoinHorizontal(lipgloss.Top, modelStyle.Render(fmt.Sprintf("%s\n\n%s", m.textarea.View(), "\n"+generate_status_bar(m.textarea.Width(), save_message, format, source_file, hint))), tableStyle.Render(m.searchTable.View()))
+			s = lipgloss.JoinVertical(lipgloss.Center, inputFoucseStyle.Render(m.textInput.View()), s)
+		} else if m.state == searchTableView {
+			s += lipgloss.JoinHorizontal(lipgloss.Top, modelFoucseStyle.Render(fmt.Sprintf("%s\n\n%s", m.textarea.View(), "\n"+generate_status_bar(m.textarea.Width(), save_message, format, source_file, hint))), tableFoucseStyle.Render(m.searchTable.View()))
+			s = lipgloss.JoinVertical(lipgloss.Center, inputFoucseStyle.Render(m.textInput.View()), s)
+		} else {
+			s += lipgloss.JoinHorizontal(lipgloss.Top, modelFoucseStyle.Render(fmt.Sprintf("%s\n\n%s", m.textarea.View(), "\n"+generate_status_bar(m.textarea.Width(), save_message, format, source_file, hint))), tableStyle.Render(m.searchTable.View()))
+			s = lipgloss.JoinVertical(lipgloss.Center, inputStyle.Render(m.textInput.View()), s)
+		}
 	} else {
-		s += lipgloss.JoinHorizontal(lipgloss.Top, modelFoucseStyle.Render(fmt.Sprintf("%s\n\n%s", m.textarea.View(), "\n"+generate_status_bar(m.textarea.Width(), save_message, format, source_file, hint))), tableStyle.Render(m.table.View()))
-		s = lipgloss.JoinVertical(lipgloss.Center, inputStyle.Render(m.textInput.View()), s)
+		if m.state == codeView {
+			s += lipgloss.JoinHorizontal(lipgloss.Top, modelStyle.Render(fmt.Sprintf("%s\n\n%s", m.textarea.View(), "\n"+generate_status_bar(m.textarea.Width(), save_message, format, source_file, hint))), tableStyle.Render(m.table.View()))
+			s = lipgloss.JoinVertical(lipgloss.Center, inputFoucseStyle.Render(m.textInput.View()), s)
+		} else if m.state == tableView {
+			s += lipgloss.JoinHorizontal(lipgloss.Top, modelFoucseStyle.Render(fmt.Sprintf("%s\n\n%s", m.textarea.View(), "\n"+generate_status_bar(m.textarea.Width(), save_message, format, source_file, hint))), tableFoucseStyle.Render(m.table.View()))
+			s = lipgloss.JoinVertical(lipgloss.Center, inputFoucseStyle.Render(m.textInput.View()), s)
+		} else {
+			s += lipgloss.JoinHorizontal(lipgloss.Top, modelFoucseStyle.Render(fmt.Sprintf("%s\n\n%s", m.textarea.View(), "\n"+generate_status_bar(m.textarea.Width(), save_message, format, source_file, hint))), tableStyle.Render(m.table.View()))
+			s = lipgloss.JoinVertical(lipgloss.Center, inputStyle.Render(m.textInput.View()), s)
+		}
 	}
 
 	return s
