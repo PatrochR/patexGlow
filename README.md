@@ -2,6 +2,8 @@
 
 Hello there! Welcome to your new little editing buddy, built with Go and the amazing Charm libraries ([Bubble Tea](https://github.com/charmbracelet/bubbletea), [Bubbles](https://github.com/charmbracelet/bubbles), and [Lipgloss](https://github.com/charmbracelet/lipgloss))! 💖 It's a cozy little spot right in your terminal for editing text files.
 
+![alt text](https://github.com/PatrochR/patexGlow/blob/main/image/image.png)
+
 ## What Can This Little Buddy Do? 🪄
 
 * **Jot down your thoughts:** Basic text editing fun! 📝
